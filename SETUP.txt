@@ -1,0 +1,63 @@
+LANGKAH SETUP YANG PALING MUDAH
+================================
+
+STEP 1: SETUP DATABASE (2 MENIT)
+--------------------------------
+1. Buka browser: http://localhost/phpmyadmin
+2. Login (biasanya tidak perlu password)
+3. Klik tab "Import"
+4. Klik "Choose File" → pilih: /opt/lampp/htdocs/manage-medical/database/schema.sql
+5. Klik tombol "Go"
+6. Tunggu sebentar, akan muncul "Queries executed successfully"
+7. SELESAI ✓
+
+
+STEP 2: BUKA APLIKASI
+----------------------
+1. Buka browser: http://localhost/manage-medical
+2. Akan langsung ke halaman login
+
+
+STEP 3: LOGIN
+-------------
+Username: admin
+Password: admin123
+
+Klik tombol Login
+
+
+SELESAI! 🎉
+-----------
+Aplikasi siap digunakan.
+
+Sekarang Anda bisa:
+- Lihat Dashboard
+- Manage Data Barang
+- Manage Supplier
+- Manage Transaksi
+
+
+JIKA ADA ERROR:
+----------------
+
+Error: "Koneksi database gagal"
+→ Buka file: includes/config.php
+→ Pastikan DB_USER, DB_PASS, DB_NAME sesuai
+
+Error: "Database tidak ada"
+→ Pastikan schema.sql sudah di-import ke phpmyadmin
+→ Cek di phpmyadmin, database "manage_medical_db" harus ada
+
+Error: "Halaman tidak ditemukan (404)"
+→ Pastikan folder di: /opt/lampp/htdocs/manage-medical
+→ Akses: http://localhost/manage-medical (bukan di-access langsung file)
+
+Error: "Login gagal"
+→ Username: admin
+→ Password: admin123
+→ Pastikan database sudah di-import
+
+
+PERLU BANTUAN?
+---------------
+Baca file: README.md atau QUICK_START.md
