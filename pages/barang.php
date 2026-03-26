@@ -9,90 +9,16 @@ $message = '';
 $error = '';
 $form = [];
 
-function excelSerialToDate($serial) {
-    if ($serial === '' || $serial === null) {
-        return '';
-    }
-    $serial = (int)floor((float)$serial);
-    if ($serial <= 0) {
-        return '';
-    }
-    $base = new DateTime('1899-12-30');
-    $base->modify("+{$serial} days");
-    return $base->format('Y-m-d');
-}
-
-function readXlsxRows($filePath, &$errMsg) {
-    $errMsg = '';
-    if (!class_exists('ZipArchive')) {
-        $errMsg = 'Ekstensi ZipArchive tidak tersedia di server.';
-        return [];
-    }
-    if (!file_exists($filePath)) {
-        $errMsg = 'File tidak ditemukan.';
-        return [];
-    }
-    $zip = new ZipArchive();
-    if ($zip->open($filePath) !== true) {
-        $errMsg = 'Gagal membuka file Excel.';
-        return [];
-    }
-
-    $sharedStrings = [];
-    $sharedXml = $zip->getFromName('xl/sharedStrings.xml');
-    if ($sharedXml !== false) {
-        $shared = simplexml_load_string($sharedXml);
-        if ($shared && isset($shared->si)) {
-            $i = 0;
-            foreach ($shared->si as $si) {
-                $texts = [];
-                foreach ($si->t as $t) {
-                    $texts[] = (string)$t;
-                }
-                foreach ($si->r as $r) {
-                    if (isset($r->t)) {
-                        $texts[] = (string)$r->t;
-                    }
-                }
-                $sharedStrings[$i] = implode('', $texts);
-                $i++;
-            }
-        }
-    }
-
-    $sheetXml = $zip->getFromName('xl/worksheets/sheet1.xml');
-    if ($sheetXml === false) {
-        $zip->close();
-        $errMsg = 'Sheet1 tidak ditemukan di file Excel.';
-        return [];
-    }
-
-    $sheet = simplexml_load_string($sheetXml);
-    $rows = [];
-    if ($sheet && isset($sheet->sheetData->row)) {
-        foreach ($sheet->sheetData->row as $row) {
-            $rowData = [];
-            foreach ($row->c as $c) {
-                $cellRef = (string)$c['r'];
-                $col = preg_replace('/[^A-Z]/', '', $cellRef);
-                $type = (string)$c['t'];
-                $v = isset($c->v) ? (string)$c->v : '';
-                if ($type === 's') {
-                    $v = $sharedStrings[(int)$v] ?? '';
-                }
-                $rowData[$col] = $v;
-            }
-            $rows[] = $rowData;
-        }
-    }
-    $zip->close();
-    return $rows;
-}
-
 // Pastikan kolom stok_minimum ada (migrasi ringan)
 $check_col = $conn->query("SHOW COLUMNS FROM barang LIKE 'stok_minimum'");
 if ($check_col && $check_col->num_rows === 0) {
     $conn->query("ALTER TABLE barang ADD COLUMN stok_minimum INT DEFAULT 10 AFTER stok_akhir");
+}
+
+// Pastikan kolom total_harga ada
+$check_col = $conn->query("SHOW COLUMNS FROM barang LIKE 'total_harga'");
+if ($check_col && $check_col->num_rows === 0) {
+    $conn->query("ALTER TABLE barang ADD COLUMN total_harga DECIMAL(12,2) AFTER harga_unit");
 }
 
 // Ambil semua supplier
@@ -105,155 +31,62 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     if ($action === '') {
         $action = 'add';
     }
-    if ($action === 'import_excel') {
-        if (!isset($_FILES['excel_file']) || $_FILES['excel_file']['error'] !== UPLOAD_ERR_OK) {
-            $error = "File Excel gagal diunggah.";
-        } else {
-            $tmpPath = $_FILES['excel_file']['tmp_name'];
-            $import_error = '';
-            $rows = readXlsxRows($tmpPath, $import_error);
-            if ($import_error) {
-                $error = $import_error;
-            } else {
-                // Header ada di baris ke-2 (index 1)
-                $data_rows = [];
-                foreach ($rows as $idx => $row) {
-                    if ($idx <= 1) {
-                        continue;
-                    }
-                    if (empty($row['A']) || empty($row['B'])) {
-                        continue;
-                    }
-                    $data_rows[] = $row;
-                }
-
-                if (isset($_POST['hapus_sebelum_import']) && $_POST['hapus_sebelum_import'] === '1') {
-                    $conn->query("DELETE FROM barang");
-                }
-
-                $imported = 0;
-                foreach ($data_rows as $row) {
-                    $kode_barang = $conn->real_escape_string(trim($row['A'] ?? ''));
-                    $nama_barang = $conn->real_escape_string(trim($row['B'] ?? ''));
-                    $supplier_nama = trim($row['C'] ?? '');
-                    $tanggal_masuk = excelSerialToDate($row['D'] ?? '');
-                    $tanggal_kadaluarsa = excelSerialToDate($row['E'] ?? '');
-                    $stok_awal = (int)floor((float)($row['F'] ?? 0));
-                    $stok_akhir = (int)floor((float)($row['G'] ?? 0));
-                    $satuan = $conn->real_escape_string(trim($row['H'] ?? ''));
-                    $harga_unit = (float)($row['I'] ?? 0);
-                    $kategori = 'Bahan Baku';
-
-                    // Supplier: ambil atau buat
-                    $supplier_id = 0;
-                    if ($supplier_nama !== '') {
-                        $safe_supplier = $conn->real_escape_string($supplier_nama);
-                        $sup_res = $conn->query("SELECT id FROM supplier WHERE nama_supplier = '$safe_supplier' LIMIT 1");
-                        if ($sup_res && $sup_res->num_rows > 0) {
-                            $supplier_id = (int)$sup_res->fetch_assoc()['id'];
-                        } else {
-                            $conn->query("INSERT INTO supplier (nama_supplier) VALUES ('$safe_supplier')");
-                            $supplier_id = (int)$conn->insert_id;
-                        }
-                    }
-                    if ($supplier_id <= 0) {
-                        $sup_res = $conn->query("SELECT id FROM supplier ORDER BY id ASC LIMIT 1");
-                        if ($sup_res && $sup_res->num_rows > 0) {
-                            $supplier_id = (int)$sup_res->fetch_assoc()['id'];
-                        } else {
-                            $conn->query("INSERT INTO supplier (nama_supplier) VALUES ('Supplier Umum')");
-                            $supplier_id = (int)$conn->insert_id;
-                        }
-                    }
-
-                    $stok_masuk = 0;
-                    $stok_keluar = max(0, $stok_awal - $stok_akhir);
-                    $stok_minimum = 10;
-
-                    $cek = $conn->query("SELECT id FROM barang WHERE kode_barang = '$kode_barang' LIMIT 1");
-                    if ($cek && $cek->num_rows > 0) {
-                        $existing_id = (int)$cek->fetch_assoc()['id'];
-                        $query = "UPDATE barang SET
-                                  nama_barang = '$nama_barang',
-                                  supplier_id = $supplier_id,
-                                  kategori = '$kategori',
-                                  stok_awal = $stok_awal,
-                                  stok_masuk = $stok_masuk,
-                                  stok_keluar = $stok_keluar,
-                                  stok_akhir = $stok_akhir,
-                                  stok_minimum = $stok_minimum,
-                                  harga_unit = $harga_unit,
-                                  tanggal_masuk = '$tanggal_masuk',
-                                  tanggal_kadaluarsa = '$tanggal_kadaluarsa',
-                                  satuan = '$satuan'
-                                  WHERE id = $existing_id";
-                        $conn->query($query);
-                        $imported++;
-                    } else {
-                        $query = "INSERT INTO barang (nama_barang, kode_barang, supplier_id, kategori, stok_awal, stok_masuk, stok_keluar, stok_akhir, stok_minimum, harga_unit, tanggal_masuk, tanggal_kadaluarsa, satuan)
-                                  VALUES ('$nama_barang', '$kode_barang', $supplier_id, '$kategori', $stok_awal, $stok_masuk, $stok_keluar, $stok_akhir, $stok_minimum, $harga_unit, '$tanggal_masuk', '$tanggal_kadaluarsa', '$satuan')";
-                        if ($conn->query($query)) {
-                            $imported++;
-                        }
-                    }
-                }
-
-                $message = "Import selesai. Data diproses: " . $imported . " baris.";
-                safeRedirect("barang.php");
-            }
-        }
+    $nama_barang = $conn->real_escape_string($_POST['nama_barang']);
+    $kode_barang = $conn->real_escape_string($_POST['kode_barang']);
+    $supplier_id = (int)$_POST['supplier_id'];
+    $kategori = 'Bahan Baku';
+    $stok_awal = (int)$_POST['stok_awal'];
+    $stok_akhir = (int)$_POST['stok_akhir'];
+    $harga_unit = (float)$_POST['harga_unit'];
+    $tanggal_masuk = $_POST['tanggal_masuk'];
+    $tanggal_kadaluarsa = $_POST['tanggal_kadaluarsa'];
+    $satuan = $conn->real_escape_string($_POST['satuan']);
+    
+    $stok_minimum = isset($_POST['stok_minimum']) ? (int)$_POST['stok_minimum'] : 10;
+    if ($stok_akhir >= $stok_awal) {
+        $stok_masuk = $stok_akhir - $stok_awal;
+        $stok_keluar = 0;
     } else {
-
-        $nama_barang = $conn->real_escape_string($_POST['nama_barang']);
-        $kode_barang = $conn->real_escape_string($_POST['kode_barang']);
-        $supplier_id = (int)$_POST['supplier_id'];
-        $kategori = $conn->real_escape_string($_POST['kategori']);
-        $stok_awal = (int)$_POST['stok_awal'];
-        $stok_masuk = (int)$_POST['stok_masuk'];
-        $stok_keluar = (int)$_POST['stok_keluar'];
-        $harga_unit = (float)$_POST['harga_unit'];
-        $tanggal_masuk = $_POST['tanggal_masuk'];
-        $tanggal_kadaluarsa = $_POST['tanggal_kadaluarsa'];
-        $satuan = $conn->real_escape_string($_POST['satuan']);
-        
-        $stok_minimum = (int)$_POST['stok_minimum'];
-        $stok_akhir = $stok_awal + $stok_masuk - $stok_keluar;
-        
-        if ($suppliers_count === 0) {
-            $error = "Tambah supplier terlebih dahulu sebelum menambah barang.";
-        } elseif ($supplier_id <= 0) {
-            $error = "Supplier wajib dipilih.";
-        } elseif ($action == 'add') {
-            $query = "INSERT INTO barang (nama_barang, kode_barang, supplier_id, kategori, stok_awal, stok_masuk, stok_keluar, stok_akhir, stok_minimum, harga_unit, tanggal_masuk, tanggal_kadaluarsa, satuan) 
-                      VALUES ('$nama_barang', '$kode_barang', $supplier_id, '$kategori', $stok_awal, $stok_masuk, $stok_keluar, $stok_akhir, $stok_minimum, $harga_unit, '$tanggal_masuk', '$tanggal_kadaluarsa', '$satuan')";
-            if ($conn->query($query)) {
-                $message = "Bahan berhasil ditambahkan!";
-                safeRedirect("barang.php");
-            } else {
-                $error = "Error: " . $conn->error;
-            }
-        } elseif ($action == 'edit') {
-            $query = "UPDATE barang SET 
-                      nama_barang = '$nama_barang',
-                      kode_barang = '$kode_barang',
-                      supplier_id = $supplier_id,
-                      kategori = '$kategori',
-                      stok_awal = $stok_awal,
-                      stok_masuk = $stok_masuk,
-                      stok_keluar = $stok_keluar,
-                      stok_akhir = $stok_akhir,
-                      stok_minimum = $stok_minimum,
-                      harga_unit = $harga_unit,
-                      tanggal_masuk = '$tanggal_masuk',
-                      tanggal_kadaluarsa = '$tanggal_kadaluarsa',
-                      satuan = '$satuan'
-                      WHERE id = $id";
-            if ($conn->query($query)) {
-                $message = "Bahan berhasil diperbarui!";
-                safeRedirect("barang.php");
-            } else {
-                $error = "Error: " . $conn->error;
-            }
+        $stok_masuk = 0;
+        $stok_keluar = $stok_awal - $stok_akhir;
+    }
+    $total_harga = $harga_unit * $stok_akhir;
+    
+    if ($suppliers_count === 0) {
+        $error = "Tambah supplier terlebih dahulu sebelum menambah barang.";
+    } elseif ($supplier_id <= 0) {
+        $error = "Supplier wajib dipilih.";
+    } elseif ($action == 'add') {
+        $query = "INSERT INTO barang (nama_barang, kode_barang, supplier_id, kategori, stok_awal, stok_masuk, stok_keluar, stok_akhir, stok_minimum, harga_unit, total_harga, tanggal_masuk, tanggal_kadaluarsa, satuan) 
+                  VALUES ('$nama_barang', '$kode_barang', $supplier_id, '$kategori', $stok_awal, $stok_masuk, $stok_keluar, $stok_akhir, $stok_minimum, $harga_unit, $total_harga, '$tanggal_masuk', '$tanggal_kadaluarsa', '$satuan')";
+        if ($conn->query($query)) {
+            $message = "Bahan berhasil ditambahkan!";
+            safeRedirect("barang.php");
+        } else {
+            $error = "Error: " . $conn->error;
+        }
+    } elseif ($action == 'edit') {
+        $query = "UPDATE barang SET 
+                  nama_barang = '$nama_barang',
+                  kode_barang = '$kode_barang',
+                  supplier_id = $supplier_id,
+                  kategori = '$kategori',
+                  stok_awal = $stok_awal,
+                  stok_masuk = $stok_masuk,
+                  stok_keluar = $stok_keluar,
+                  stok_akhir = $stok_akhir,
+                  stok_minimum = $stok_minimum,
+                  harga_unit = $harga_unit,
+                  total_harga = $total_harga,
+                  tanggal_masuk = '$tanggal_masuk',
+                  tanggal_kadaluarsa = '$tanggal_kadaluarsa',
+                  satuan = '$satuan'
+                  WHERE id = $id";
+        if ($conn->query($query)) {
+            $message = "Bahan berhasil diperbarui!";
+            safeRedirect("barang.php");
+        } else {
+            $error = "Error: " . $conn->error;
         }
     }
 }
@@ -345,51 +178,32 @@ $barangs = $conn->query("SELECT b.*, s.nama_supplier FROM barang b LEFT JOIN sup
                     </div>
                     
                     <div class="mb-3">
-                        <label for="kategori" class="form-label">Kategori</label>
-                        <input type="text" class="form-control" id="kategori" name="kategori" 
-                               value="<?php echo $edit_data ? $edit_data['kategori'] : ($form['kategori'] ?? ''); ?>"
-                               placeholder="e.g: Bahan Baku, Bumbu, Kemasan">
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label for="stok_awal" class="form-label">Stok Awal</label>
+                        <label for="stok_awal" class="form-label">Jumlah Awal</label>
                         <input type="number" class="form-control" id="stok_awal" name="stok_awal" 
                                value="<?php echo $edit_data ? $edit_data['stok_awal'] : ($form['stok_awal'] ?? '0'); ?>" min="0">
                     </div>
                     
                     <div class="mb-3">
-                        <label for="stok_masuk" class="form-label">Stok Masuk</label>
-                        <input type="number" class="form-control" id="stok_masuk" name="stok_masuk" 
-                               value="<?php echo $edit_data ? $edit_data['stok_masuk'] : ($form['stok_masuk'] ?? '0'); ?>" min="0">
+                        <label for="stok_akhir" class="form-label">Jumlah Saat Ini</label>
+                        <input type="number" class="form-control" id="stok_akhir" name="stok_akhir" 
+                               value="<?php echo $edit_data ? $edit_data['stok_akhir'] : ($form['stok_akhir'] ?? '0'); ?>" min="0">
                     </div>
                     
                     <div class="mb-3">
-                        <label for="stok_keluar" class="form-label">Stok Keluar</label>
-                        <input type="number" class="form-control" id="stok_keluar" name="stok_keluar" 
-                               value="<?php echo $edit_data ? $edit_data['stok_keluar'] : ($form['stok_keluar'] ?? '0'); ?>" min="0">
-                    </div>
-
-                    <div class="mb-3">
-                        <label for="stok_minimum" class="form-label">Stok Minimum (Alert)</label>
-                        <input type="number" class="form-control" id="stok_minimum" name="stok_minimum" 
-                               value="<?php echo $edit_data ? $edit_data['stok_minimum'] : ($form['stok_minimum'] ?? '10'); ?>" min="0">
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label for="harga_unit" class="form-label">Harga Unit (Rp)</label>
+                        <label for="harga_unit" class="form-label">Harga Satuan (Rp)</label>
                         <input type="number" class="form-control" id="harga_unit" name="harga_unit" 
                                value="<?php echo $edit_data ? $edit_data['harga_unit'] : ($form['harga_unit'] ?? '0'); ?>" min="0" step="0.01">
                     </div>
-                    
+
                     <div class="mb-3">
                         <label for="satuan" class="form-label">Satuan</label>
                         <input type="text" class="form-control" id="satuan" name="satuan" 
                                value="<?php echo $edit_data ? $edit_data['satuan'] : ($form['satuan'] ?? ''); ?>"
                                placeholder="e.g: kg, liter, pcs, pack">
                     </div>
-
+                    
                     <div class="mb-3">
-                        <label for="tanggal_masuk" class="form-label">Tanggal Masuk</label>
+                        <label for="tanggal_masuk" class="form-label">Tanggal Pembelian</label>
                         <input type="date" class="form-control" id="tanggal_masuk" name="tanggal_masuk" 
                                value="<?php echo $edit_data ? $edit_data['tanggal_masuk'] : ($form['tanggal_masuk'] ?? date('Y-m-d')); ?>">
                     </div>
@@ -427,26 +241,6 @@ $barangs = $conn->query("SELECT b.*, s.nama_supplier FROM barang b LEFT JOIN sup
                 </div>
             </div>
             <div class="card-body">
-                <div class="border rounded p-3 mb-3">
-                    <h6 class="mb-2">Import Excel (Inventory Bahan Baku)</h6>
-                    <form method="POST" enctype="multipart/form-data" class="row g-2 align-items-center">
-                        <input type="hidden" name="action" value="import_excel">
-                        <div class="col-md-7">
-                            <input type="file" class="form-control" name="excel_file" accept=".xlsx" required>
-                            <small class="text-muted">Gunakan format file: "Pencatatan_Inventory_Bahan_Baku".</small>
-                        </div>
-                        <div class="col-md-3">
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" name="hapus_sebelum_import" value="1" id="hapus_sebelum_import">
-                                <label class="form-check-label" for="hapus_sebelum_import">Hapus data lama</label>
-                            </div>
-                        </div>
-                        <div class="col-md-2">
-                            <button type="submit" class="btn btn-success w-100">Import</button>
-                        </div>
-                    </form>
-                </div>
-
                 <?php if ($barangs->num_rows > 0): ?>
                     <div class="table-responsive">
                         <table class="table table-striped table-hover table-sm">
@@ -458,7 +252,8 @@ $barangs = $conn->query("SELECT b.*, s.nama_supplier FROM barang b LEFT JOIN sup
                                     <th>Supplier</th>
                                     <th>Stok</th>
                                     <th>Min</th>
-                                    <th>Harga</th>
+                                    <th>Harga Satuan</th>
+                                    <th>Total Harga</th>
                                     <th>Expired</th>
                                     <th>Status</th>
                                     <th>Aksi</th>
@@ -493,6 +288,13 @@ $barangs = $conn->query("SELECT b.*, s.nama_supplier FROM barang b LEFT JOIN sup
                                         <td><strong><?php echo $row['stok_akhir']; ?> <?php echo $row['satuan']; ?></strong></td>
                                         <td><?php echo $min_stock; ?></td>
                                         <td><?php echo number_format($row['harga_unit'], 0, ',', '.'); ?></td>
+                                        <?php
+                                        $display_total = (float)$row['total_harga'];
+                                        if ($display_total <= 0) {
+                                            $display_total = (float)$row['harga_unit'] * (int)$row['stok_akhir'];
+                                        }
+                                        ?>
+                                        <td><?php echo number_format($display_total, 0, ',', '.'); ?></td>
                                         <td>
                                             <?php echo $expired_status; ?>
                                         </td>

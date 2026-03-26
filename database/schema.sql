@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS barang (
     stok_akhir INT DEFAULT 0,
     stok_minimum INT DEFAULT 10,
     harga_unit DECIMAL(10, 2),
+    total_harga DECIMAL(12, 2),
     tanggal_masuk DATE,
     tanggal_kadaluarsa DATE,
     satuan VARCHAR(20),
