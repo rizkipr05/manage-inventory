@@ -14,7 +14,7 @@ $auto_refresh = isset($auto_refresh) ? (int)$auto_refresh : 0;
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?php echo isset($page_title) ? $page_title : 'Sistem Stok Barang'; ?></title>
+    <title><?php echo isset($page_title) ? $page_title : 'Sistem Stok Bahan Baku'; ?></title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
@@ -161,7 +161,7 @@ $auto_refresh = isset($auto_refresh) ? (int)$auto_refresh : 0;
     <div class="sidebar">
         <div class="sidebar-logo">
             <i class="fas fa-box-open"></i>
-            <h4>Stok Barang</h4>
+            <h4>Stok Bahan Baku</h4>
             <small>Inventory Management</small>
         </div>
         <div class="sidebar-menu">
@@ -169,7 +169,7 @@ $auto_refresh = isset($auto_refresh) ? (int)$auto_refresh : 0;
                 <i class="fas fa-chart-line"></i>Dashboard
             </a>
             <a href="barang.php" class="<?php echo basename($_SERVER['PHP_SELF']) == 'barang.php' ? 'active' : ''; ?>">
-                <i class="fas fa-boxes"></i>Data Barang
+                <i class="fas fa-boxes"></i>Data Bahan Baku
             </a>
             <a href="supplier.php" class="<?php echo basename($_SERVER['PHP_SELF']) == 'supplier.php' ? 'active' : ''; ?>">
                 <i class="fas fa-truck"></i>Supplier
