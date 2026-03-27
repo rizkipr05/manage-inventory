@@ -1,5 +1,5 @@
 -- Buat Database
-CREATE DATABASE IF NOT EXISTS manage_medical_db;
+CREATE DATABASE IF NOT EXISTS manage_inventory_db;
 USE manage_medical_db;
 
 -- Tabel untuk Admin/Pemilik
@@ -62,9 +62,3 @@ CREATE TABLE IF NOT EXISTS transaksi (
 -- Insert Admin Default
 INSERT INTO admin (username, password, email) VALUES 
 ('admin', SHA2('admin123', 256), 'admin@managemenbarang.com');
-
--- Insert Supplier Sample
-INSERT INTO supplier (nama_supplier, contact_person, telepon, email, alamat, kota, provinsi) VALUES 
-('PT Medis Jaya', 'Budi Santoso', '021-123456', 'budi@medisjaya.com', 'Jl. Merdeka No. 10', 'Jakarta', 'DKI Jakarta'),
-('CV Farmasi Sehati', 'Ani Wijaya', '024-654321', 'ani@farmasisehat.com', 'Jl. Ahmad Yani No. 25', 'Semarang', 'Jawa Tengah'),
-('UD Kesehatan Makmur', 'Harjono', '0274-456789', 'harjono@kesehatanmakmur.com', 'Jl. Malioboro No. 5', 'Yogyakarta', 'DI Yogyakarta');
